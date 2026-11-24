@@ -297,10 +297,10 @@ abstract class Isar {
   ///
   /// If [download] is `true`, Isar will attempt to download the correct
   /// library and place it in the specified path or the script directory.
-  ///
-  /// Be careful if multiple unit tests try to download the library at the
-  /// same time. Always use `flutter test -j 1` when you rely on auto
-  /// downloading to ensure that only one test is running at a time.
+  /// The download itself is safe to call concurrently (e.g. from several
+  /// `flutter test` files running in parallel): it downloads to a temp
+  /// file and renames it into place atomically, so a caller never sees a
+  /// partially written library.
   ///
   /// Only use this method for non-Flutter code or unit tests.
   static Future<void> initializeIsarCore({

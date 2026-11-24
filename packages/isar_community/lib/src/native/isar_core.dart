@@ -164,7 +164,38 @@ Future<void> _downloadIsarCore(String libraryPath) async {
       'Could not download IsarCore library: ${response.reasonPhrase}',
     );
   }
-  await response.pipe(libraryFile.openWrite());
+
+  // Download to a temp file in the same directory, then rename it into
+  // place. `rename` is atomic on the same filesystem on POSIX and Windows,
+  // so a second process/isolate racing this method either finds nothing
+  // yet (and downloads its own temp copy) or finds a complete file -
+  // never a half-written one. Without this, concurrent callers (e.g.
+  // `flutter test` running files in parallel, each calling
+  // `initializeIsarCore(download: true)`) can load a partially written
+  // library and fail with errors like "slice extends beyond end of file"
+  // or "not a mach-o file", forcing every caller to build their own
+  // locking/renaming workaround around this method.
+  final tempFile = File('$libraryPath.download.$pid.tmp');
+  try {
+    await response.pipe(tempFile.openWrite());
+    try {
+      await tempFile.rename(libraryPath);
+    } on FileSystemException {
+      // Another download won the race and is already at libraryPath.
+      // ignore: avoid_slow_async_io
+      if (await libraryFile.exists()) {
+        await tempFile.delete();
+      } else {
+        rethrow;
+      }
+    }
+  } catch (e) {
+    // ignore: avoid_slow_async_io
+    if (await tempFile.exists()) {
+      await tempFile.delete();
+    }
+    rethrow;
+  }
 }
 
 IsarError? isarErrorFromResult(int result) {
